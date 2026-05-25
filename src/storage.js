@@ -7,7 +7,8 @@ function defaultState() {
     adminChatId: "",
     lastUpdateId: 0,
     lastBrief: "",
-    lastPublishId: ""
+    lastPublishId: "",
+    briefHistory: {}
   };
 }
 
@@ -27,6 +28,13 @@ class JsonStorage {
     this.state = Object.assign(defaultState(), parsed);
     if (!Array.isArray(this.state.subscribers)) this.state.subscribers = [];
     this.state.subscribers = this.state.subscribers.map(String);
+    if (!this.state.briefHistory || typeof this.state.briefHistory !== "object" || Array.isArray(this.state.briefHistory)) {
+      this.state.briefHistory = {};
+    }
+    if (this.state.lastPublishId && this.state.lastBrief && !this.state.briefHistory[this.state.lastPublishId]) {
+      this.state.briefHistory[this.state.lastPublishId] = this.state.lastBrief;
+      this.save();
+    }
     return this.state;
   }
 
@@ -87,7 +95,14 @@ class JsonStorage {
   setLastBrief(message, publishId) {
     this.state.lastBrief = String(message || "");
     this.state.lastPublishId = String(publishId || "");
+    if (this.state.lastPublishId) {
+      this.state.briefHistory[this.state.lastPublishId] = this.state.lastBrief;
+    }
     this.save();
+  }
+
+  getBriefByPublishId(publishId) {
+    return this.state.briefHistory[String(publishId || "")] || "";
   }
 }
 

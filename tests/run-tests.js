@@ -6,7 +6,20 @@ const path = require("path");
 
 const { getConfig } = require("../src/config");
 const { JsonStorage } = require("../src/storage");
-const { DailyOptionsBot, HELP_MESSAGE, START_MESSAGE, TEST_MESSAGE, commandFromMessage, normalizeBriefEmoji } = require("../src/bot");
+const {
+  DailyOptionsBot,
+  COMMAND_KEYBOARD,
+  HELP_MESSAGE,
+  START_MESSAGE,
+  TEST_MESSAGE,
+  commandFromMessage,
+  formatDuration,
+  messageOptions,
+  nextReportReadyAt,
+  normalizeBriefEmoji,
+  notReadyMessage,
+  previousReportDate
+} = require("../src/bot");
 const { hasBearerToken, startPublisherServer } = require("../src/publisher");
 
 const tests = [];
@@ -22,14 +35,20 @@ function tempStorage() {
 function createBot(overrides) {
   const sent = [];
   const telegram = {
-    sendMessage: async (chatId, text) => sent.push({ chatId: String(chatId), text })
+    sendMessage: async (chatId, text, options) => sent.push({ chatId: String(chatId), text, options })
   };
   const logger = { info() {}, warn() {}, error() {} };
   const bot = new DailyOptionsBot({
     telegram,
     storage: tempStorage(),
-    config: { adminChatId: "42" },
-    logger
+    config: {
+      adminChatId: "42",
+      reportReadyTime: "08:35",
+      reportTimezone: "America/New_York",
+      reportWeekdays: [1, 2, 3, 4, 5]
+    },
+    logger,
+    now: () => new Date("2026-05-26T13:00:00Z")
   });
   Object.assign(bot, overrides || {});
   return { bot, sent };
@@ -67,11 +86,15 @@ test("config reads publish settings", () => {
     "TELEGRAM_BOT_TOKEN=token",
     "PUBLISH_HOST=127.0.0.1",
     "PUBLISH_PORT=9898",
-    "PUBLISH_TOKEN=secret"
+    "PUBLISH_TOKEN=secret",
+    "REPORT_READY_TIME=08:35",
+    "REPORT_TIMEZONE=America/New_York"
   ].join("\n"));
   const config = getConfig(dir);
   assert.strictEqual(config.publishPort, 9898);
   assert.strictEqual(config.publishToken, "secret");
+  assert.strictEqual(config.reportReadyTime, "08:35");
+  assert.deepStrictEqual(config.reportWeekdays, [1, 2, 3, 4, 5]);
 });
 
 test("storage persists subscribers and latest brief", () => {
@@ -84,14 +107,30 @@ test("storage persists subscribers and latest brief", () => {
   assert.strictEqual(reloaded.isSubscribed("123"), true);
   assert.strictEqual(reloaded.getLastBrief(), "brief");
   assert.strictEqual(reloaded.getLastPublishId(), "2026-05-25");
+  assert.strictEqual(reloaded.getBriefByPublishId("2026-05-25"), "brief");
 });
 
 test("command messages list current commands", () => {
   assert.ok(START_MESSAGE.includes("\u{1F44B} Welcome"));
-  assert.ok(START_MESSAGE.includes("/today - resend the latest published brief"));
+  assert.ok(START_MESSAGE.includes("/today - resend today's brief when ready"));
+  assert.ok(START_MESSAGE.includes("/yesterday - resend the previous brief"));
   assert.ok(HELP_MESSAGE.includes("/subscribe - receive daily picks"));
   assert.ok(TEST_MESSAGE.includes("\u2705 Daily Options Picker test message received."));
+  assert.deepStrictEqual(messageOptions(), { reply_markup: COMMAND_KEYBOARD });
   assert.strictEqual(commandFromMessage({ text: "/today@ck_daily_options_picker_bot" }), "/today");
+});
+
+test("report readiness helpers calculate concise countdowns", () => {
+  const config = {
+    reportReadyTime: "08:35",
+    reportTimezone: "America/New_York",
+    reportWeekdays: [1, 2, 3, 4, 5]
+  };
+  const readyAt = nextReportReadyAt(new Date("2026-05-26T12:00:00Z"), config);
+  assert.strictEqual(readyAt.toISOString(), "2026-05-26T12:35:00.000Z");
+  assert.strictEqual(formatDuration(35 * 60000), "0d 0h 35m");
+  assert.strictEqual(previousReportDate(new Date("2026-05-26T13:00:00Z"), config), "2026-05-25");
+  assert.ok(notReadyMessage(new Date("2026-05-26T12:00:00Z"), config).includes("0d 0h 35m"));
 });
 
 test("brief emoji normalization repairs question-mark placeholders", () => {
@@ -112,7 +151,7 @@ test("brief emoji normalization repairs question-mark placeholders", () => {
 
 test("command handling covers subscribe status test and today", async () => {
   const { bot, sent } = createBot();
-  bot.storage.setLastBrief("latest brief", "brief-1");
+  bot.storage.setLastBrief("today brief", "2026-05-26");
 
   await bot.handleMessage({ chat: { id: 42 }, text: "/subscribe" });
   await bot.handleMessage({ chat: { id: 42 }, text: "/status" });
@@ -121,7 +160,31 @@ test("command handling covers subscribe status test and today", async () => {
 
   assert.strictEqual(bot.storage.isSubscribed("42"), true);
   assert.strictEqual(sent.some((message) => message.text === TEST_MESSAGE), true);
-  assert.strictEqual(sent.some((message) => message.text === "latest brief"), true);
+  assert.strictEqual(sent.some((message) => message.text === "today brief"), true);
+  assert.deepStrictEqual(sent[0].options.reply_markup, COMMAND_KEYBOARD);
+});
+
+test("today reports not ready with time remaining", async () => {
+  const { bot, sent } = createBot({
+    now: () => new Date("2026-05-26T12:00:00Z")
+  });
+
+  await bot.handleMessage({ chat: { id: 42 }, text: "/today" });
+
+  assert.strictEqual(sent[0].text, "Today's report is not ready yet.\n\nExpected in 0d 0h 35m.");
+  assert.deepStrictEqual(sent[0].options.reply_markup, COMMAND_KEYBOARD);
+});
+
+test("yesterday sends previous report day brief", async () => {
+  const { bot, sent } = createBot({
+    now: () => new Date("2026-05-26T13:00:00Z")
+  });
+  bot.storage.setLastBrief("yesterday brief", "2026-05-25");
+
+  await bot.handleMessage({ chat: { id: 42 }, text: "/yesterday" });
+
+  assert.strictEqual(sent[0].text, "yesterday brief");
+  assert.deepStrictEqual(sent[0].options.reply_markup, COMMAND_KEYBOARD);
 });
 
 test("publishBrief sends to subscribers and skips duplicate ids", async () => {
@@ -144,6 +207,7 @@ test("publishBrief normalizes emoji placeholders before sending", async () => {
   await bot.publishBrief({ message: "?? Small cap ticker - TEST\n?? Bull - CALL", publishId: "daily-emoji" });
 
   assert.strictEqual(sent[0].text, "\u{1F539} Small cap ticker - TEST\n\u{1F402} Bull - CALL");
+  assert.deepStrictEqual(sent[0].options.reply_markup, COMMAND_KEYBOARD);
   assert.strictEqual(bot.storage.getLastBrief(), sent[0].text);
 });
 

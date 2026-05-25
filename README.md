@@ -30,6 +30,9 @@ Codex owns the research and writing. The Node bot only manages Telegram commands
 | `PUBLISH_HOST` | `127.0.0.1` | Local publish server host. |
 | `PUBLISH_PORT` | `8787` | Local publish server port. |
 | `PUBLISH_TOKEN` | required | Bearer token used by Codex automation to publish. |
+| `REPORT_READY_TIME` | `08:35` | Time used by `/today` to estimate when the report should be ready. |
+| `REPORT_TIMEZONE` | `America/New_York` | IANA timezone used for report dates and readiness countdowns. |
+| `REPORT_WEEKDAYS` | `1,2,3,4,5` | Report weekdays, where Sunday is `0` and Monday is `1`. |
 
 ## Run
 
@@ -45,9 +48,12 @@ The bot uses Telegram long polling. No public webhook is required.
 - `/help` - list commands
 - `/subscribe` - receive daily picks
 - `/unsubscribe` - stop daily picks
-- `/today` - resend the latest published brief
+- `/today` - resend today's brief when ready
+- `/yesterday` - resend the previous brief
 - `/status` - check subscription status
 - `/test` - send admin test message
+
+Telegram shows persistent buttons for `/today` and `/yesterday` after bot replies.
 
 ## Publish Endpoint
 
@@ -68,7 +74,9 @@ Body:
 }
 ```
 
-`publishId` prevents duplicate sends. The bot stores the latest message so `/today` can resend it.
+`publishId` prevents duplicate sends. Use the `America/New_York` report date, such as `2026-05-25`, so `/today` and `/yesterday` can find the right brief.
+
+If today's brief has not been published yet, `/today` replies with the time remaining in `xd xh xm` format.
 
 ## Codex Automation
 
@@ -89,7 +97,7 @@ npm run build
 npm test
 ```
 
-The tests cover command wording, subscriptions, latest-brief resend, duplicate publish protection, and the local publish endpoint auth.
+The tests cover command wording, subscriptions, `/today` readiness, `/yesterday`, duplicate publish protection, and the local publish endpoint auth.
 
 ## Data And Logs
 
