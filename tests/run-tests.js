@@ -6,7 +6,7 @@ const path = require("path");
 
 const { getConfig } = require("../src/config");
 const { JsonStorage } = require("../src/storage");
-const { DailyOptionsBot, HELP_MESSAGE, START_MESSAGE, TEST_MESSAGE, commandFromMessage } = require("../src/bot");
+const { DailyOptionsBot, HELP_MESSAGE, START_MESSAGE, TEST_MESSAGE, commandFromMessage, normalizeBriefEmoji } = require("../src/bot");
 const { hasBearerToken, startPublisherServer } = require("../src/publisher");
 
 const tests = [];
@@ -87,9 +87,27 @@ test("storage persists subscribers and latest brief", () => {
 });
 
 test("command messages list current commands", () => {
-  assert.ok(START_MESSAGE.includes("/today — resend the latest published brief"));
-  assert.ok(HELP_MESSAGE.includes("/subscribe — receive daily picks"));
+  assert.ok(START_MESSAGE.includes("\u{1F44B} Welcome"));
+  assert.ok(START_MESSAGE.includes("/today - resend the latest published brief"));
+  assert.ok(HELP_MESSAGE.includes("/subscribe - receive daily picks"));
+  assert.ok(TEST_MESSAGE.includes("\u2705 Daily Options Picker test message received."));
   assert.strictEqual(commandFromMessage({ text: "/today@ck_daily_options_picker_bot" }), "/today");
+});
+
+test("brief emoji normalization repairs question-mark placeholders", () => {
+  const message = [
+    "?? Small cap ticker - TEST",
+    "?? Bull - CALL",
+    "?? Mid cap ticker - TEST",
+    "?? Bear - PUT",
+    "?? Large cap ticker - TEST"
+  ].join("\n");
+  const normalized = normalizeBriefEmoji(message);
+  assert.ok(normalized.includes("\u{1F539} Small cap ticker - TEST"));
+  assert.ok(normalized.includes("\u{1F402} Bull - CALL"));
+  assert.ok(normalized.includes("\u{1F538} Mid cap ticker - TEST"));
+  assert.ok(normalized.includes("\u{1F43B} Bear - PUT"));
+  assert.ok(normalized.includes("\u{1F537} Large cap ticker - TEST"));
 });
 
 test("command handling covers subscribe status test and today", async () => {
@@ -117,6 +135,16 @@ test("publishBrief sends to subscribers and skips duplicate ids", async () => {
   assert.deepStrictEqual(first, { sent: 2, skipped: false });
   assert.deepStrictEqual(second, { sent: 0, skipped: true });
   assert.strictEqual(sent.filter((message) => message.text === "brief").length, 2);
+});
+
+test("publishBrief normalizes emoji placeholders before sending", async () => {
+  const { bot, sent } = createBot();
+  bot.storage.subscribe("42");
+
+  await bot.publishBrief({ message: "?? Small cap ticker - TEST\n?? Bull - CALL", publishId: "daily-emoji" });
+
+  assert.strictEqual(sent[0].text, "\u{1F539} Small cap ticker - TEST\n\u{1F402} Bull - CALL");
+  assert.strictEqual(bot.storage.getLastBrief(), sent[0].text);
 });
 
 test("bearer token check requires exact token", () => {
