@@ -1,14 +1,13 @@
 const assert = require("assert");
 const fs = require("fs");
+const http = require("http");
 const os = require("os");
 const path = require("path");
 
-const { parseWeekdays } = require("../src/config");
+const { getConfig } = require("../src/config");
 const { JsonStorage } = require("../src/storage");
-const { isRegularMarketOpenDate, marketHolidays } = require("../src/marketCalendar");
-const { shouldRunScheduledPicker } = require("../src/scheduler");
-const { DailyOptionsBot, TEST_MESSAGE, commandFromMessage } = require("../src/bot");
-const { chooseBestCandidate, parseRssItems, scoreSentiment } = require("../src/picker");
+const { DailyOptionsBot, HELP_MESSAGE, START_MESSAGE, TEST_MESSAGE, commandFromMessage } = require("../src/bot");
+const { hasBearerToken, startPublisherServer } = require("../src/publisher");
 
 const tests = [];
 
@@ -16,86 +15,134 @@ function test(name, fn) {
   tests.push({ name, fn });
 }
 
-test("parseWeekdays reads comma-separated day numbers", () => {
-  assert.deepStrictEqual(parseWeekdays("1,2,3,4,5"), [1, 2, 3, 4, 5]);
-});
+function tempStorage() {
+  return new JsonStorage(path.join(fs.mkdtempSync(path.join(os.tmpdir(), "dop-")), "state.json"));
+}
 
-test("storage persists subscribers and last sent date", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dop-"));
-  const file = path.join(dir, "state.json");
-  const storage = new JsonStorage(file);
-  storage.subscribe(123);
-  storage.setLastSentDate("2026-05-22");
-  const reloaded = new JsonStorage(file);
-  assert.strictEqual(reloaded.isSubscribed("123"), true);
-  assert.strictEqual(reloaded.getLastSentDate(), "2026-05-22");
-});
-
-test("market calendar skips weekends and core NYSE holidays", () => {
-  assert.strictEqual(isRegularMarketOpenDate("2026-05-23"), false);
-  assert.strictEqual(isRegularMarketOpenDate("2026-05-25"), false);
-  assert.strictEqual(isRegularMarketOpenDate("2026-05-26"), true);
-  assert.strictEqual(marketHolidays(2026).has("2026-04-03"), true);
-});
-
-test("scheduler uses America/New_York wall-clock time and dedupes", () => {
-  const config = {
-    pickerTime: "08:35",
-    pickerTimezone: "America/New_York",
-    pickerWeekdays: [1, 2, 3, 4, 5]
-  };
-  assert.strictEqual(shouldRunScheduledPicker(new Date("2026-05-26T12:35:00Z"), config, ""), true);
-  assert.strictEqual(shouldRunScheduledPicker(new Date("2026-05-26T12:35:00Z"), config, "2026-05-26"), false);
-  assert.strictEqual(shouldRunScheduledPicker(new Date("2026-05-23T12:35:00Z"), config, ""), false);
-});
-
-test("rss parser extracts title link and source", () => {
-  const xml = "<rss><channel><item><title><![CDATA[NVDA shares rally]]></title><link>https://example.com/a</link><source>Reuters</source></item></channel></rss>";
-  assert.deepStrictEqual(parseRssItems(xml), [{
-    title: "NVDA shares rally",
-    link: "https://example.com/a",
-    source: "Reuters",
-    description: ""
-  }]);
-});
-
-test("candidate chooser requires primary source and directional signal", () => {
-  const candidate = chooseBestCandidate([{
-    ticker: "NVDA",
-    items: [
-      { title: "NVDA shares rally after upgrade", description: "", link: "https://reuters.com/a", source: "Reuters", tier: "primary" },
-      { title: "NVDA growth wins attention", description: "", link: "https://benzinga.com/a", source: "Benzinga", tier: "secondary" },
-      { title: "NVDA record profit", description: "", link: "https://example.com/a", source: "Example", tier: "other" }
-    ]
-  }]);
-  assert.strictEqual(candidate.ticker, "NVDA");
-  assert.strictEqual(scoreSentiment(candidate.items) > 0, true);
-});
-
-test("command handling covers subscription, status, test, and today", async () => {
+function createBot(overrides) {
   const sent = [];
   const telegram = {
     sendMessage: async (chatId, text) => sent.push({ chatId: String(chatId), text })
   };
-  const storage = new JsonStorage(path.join(fs.mkdtempSync(path.join(os.tmpdir(), "dop-")), "state.json"));
   const logger = { info() {}, warn() {}, error() {} };
   const bot = new DailyOptionsBot({
     telegram,
-    storage,
-    config: { adminChatId: "42", pickerTimezone: "America/New_York" },
-    logger,
-    generatePickerBrief: async () => "brief"
+    storage: tempStorage(),
+    config: { adminChatId: "42" },
+    logger
   });
+  Object.assign(bot, overrides || {});
+  return { bot, sent };
+}
+
+function postJson(port, token, payload) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const request = http.request({
+      host: "127.0.0.1",
+      port,
+      path: "/publish",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+        "Authorization": token ? `Bearer ${token}` : ""
+      }
+    }, (response) => {
+      let data = "";
+      response.on("data", (chunk) => {
+        data += chunk;
+      });
+      response.on("end", () => resolve({ statusCode: response.statusCode, body: JSON.parse(data) }));
+    });
+    request.on("error", reject);
+    request.write(body);
+    request.end();
+  });
+}
+
+test("config reads publish settings", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dop-"));
+  fs.writeFileSync(path.join(dir, ".env"), [
+    "TELEGRAM_BOT_TOKEN=token",
+    "PUBLISH_HOST=127.0.0.1",
+    "PUBLISH_PORT=9898",
+    "PUBLISH_TOKEN=secret"
+  ].join("\n"));
+  const config = getConfig(dir);
+  assert.strictEqual(config.publishPort, 9898);
+  assert.strictEqual(config.publishToken, "secret");
+});
+
+test("storage persists subscribers and latest brief", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dop-"));
+  const file = path.join(dir, "state.json");
+  const storage = new JsonStorage(file);
+  storage.subscribe(123);
+  storage.setLastBrief("brief", "2026-05-25");
+  const reloaded = new JsonStorage(file);
+  assert.strictEqual(reloaded.isSubscribed("123"), true);
+  assert.strictEqual(reloaded.getLastBrief(), "brief");
+  assert.strictEqual(reloaded.getLastPublishId(), "2026-05-25");
+});
+
+test("command messages list current commands", () => {
+  assert.ok(START_MESSAGE.includes("/today — resend the latest published brief"));
+  assert.ok(HELP_MESSAGE.includes("/subscribe — receive daily picks"));
+  assert.strictEqual(commandFromMessage({ text: "/today@ck_daily_options_picker_bot" }), "/today");
+});
+
+test("command handling covers subscribe status test and today", async () => {
+  const { bot, sent } = createBot();
+  bot.storage.setLastBrief("latest brief", "brief-1");
 
   await bot.handleMessage({ chat: { id: 42 }, text: "/subscribe" });
   await bot.handleMessage({ chat: { id: 42 }, text: "/status" });
   await bot.handleMessage({ chat: { id: 42 }, text: "/test" });
   await bot.handleMessage({ chat: { id: 42 }, text: "/today" });
 
-  assert.strictEqual(storage.isSubscribed("42"), true);
+  assert.strictEqual(bot.storage.isSubscribed("42"), true);
   assert.strictEqual(sent.some((message) => message.text === TEST_MESSAGE), true);
+  assert.strictEqual(sent.some((message) => message.text === "latest brief"), true);
+});
+
+test("publishBrief sends to subscribers and skips duplicate ids", async () => {
+  const { bot, sent } = createBot();
+  bot.storage.subscribe("42");
+  bot.storage.subscribe("100");
+
+  const first = await bot.publishBrief({ message: "brief", publishId: "daily-1" });
+  const second = await bot.publishBrief({ message: "brief again", publishId: "daily-1" });
+
+  assert.deepStrictEqual(first, { sent: 2, skipped: false });
+  assert.deepStrictEqual(second, { sent: 0, skipped: true });
+  assert.strictEqual(sent.filter((message) => message.text === "brief").length, 2);
+});
+
+test("bearer token check requires exact token", () => {
+  assert.strictEqual(hasBearerToken({ headers: { authorization: "Bearer abc" } }, "abc"), true);
+  assert.strictEqual(hasBearerToken({ headers: { authorization: "Bearer wrong" } }, "abc"), false);
+});
+
+test("publisher endpoint authenticates and publishes", async () => {
+  const { bot, sent } = createBot();
+  bot.storage.subscribe("42");
+  const logger = { info() {}, warn() {}, error() {} };
+  const server = startPublisherServer(bot, {
+    publishHost: "127.0.0.1",
+    publishPort: 0,
+    publishToken: "secret"
+  }, logger);
+
+  await new Promise((resolve) => server.once("listening", resolve));
+  const port = server.address().port;
+  const unauthorized = await postJson(port, "wrong", { message: "brief", publishId: "id-1" });
+  const authorized = await postJson(port, "secret", { message: "brief", publishId: "id-1" });
+  server.close();
+
+  assert.strictEqual(unauthorized.statusCode, 401);
+  assert.strictEqual(authorized.statusCode, 200);
   assert.strictEqual(sent.some((message) => message.text === "brief"), true);
-  assert.strictEqual(commandFromMessage({ text: "/today@ck_daily_options_picker_bot" }), "/today");
 });
 
 (async () => {

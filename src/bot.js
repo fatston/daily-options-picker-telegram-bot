@@ -1,9 +1,6 @@
-const { PREPARING_MESSAGE, generatePickerBrief } = require("./picker");
-const { isRegularMarketOpenDate, partsInTimezone } = require("./marketCalendar");
+const START_MESSAGE = "👋 Welcome to Daily Options Picker.\n\nThis bot was built by Clifton.\n\nCodex researches current market news each weekday before the regular US open, picks one small-cap, one mid-cap, and one large-cap directional setup, then this Node bot publishes the brief to Telegram.\n\nInformational only. Not financial advice or a trade recommendation.\n\nCommands:\n/subscribe — receive daily picks\n/unsubscribe — stop daily picks\n/today — resend the latest published brief\n/status — check subscription status\n/test — send admin test message\n/help — show commands";
 
-const START_MESSAGE = "👋 Welcome to Daily Options Picker.\n\nThis bot was built by Clifton.\n\nIt sends a concise pre-open US options brief once per trading day, before the regular US stock market opens. The bot looks at current market news, identifies one actively discussed US-listed stock with a clear directional news signal, and summarizes whether the read points more toward a call or put idea.\n\nThis is for information and learning only. It is not financial advice, not a trade recommendation, and not personalized to your financial situation.\n\nCommands:\n/subscribe — receive the daily picker\n/unsubscribe — stop receiving daily picks\n/today — get today’s picker now\n/status — check subscription status\n/test — send admin test message\n/help — show commands";
-
-const HELP_MESSAGE = "Commands:\n/start — welcome message and explanation\n/help — list all commands\n/subscribe — receive the daily picker\n/unsubscribe — stop receiving daily picks\n/today — get today’s picker now\n/status — check subscription status\n/test — send admin test message";
+const HELP_MESSAGE = "Commands:\n/start — welcome message\n/help — list commands\n/subscribe — receive daily picks\n/unsubscribe — stop daily picks\n/today — resend the latest published brief\n/status — check subscription status\n/test — send admin test message";
 
 const TEST_MESSAGE = "✅ Daily Options Picker test message received.\n\nThe bot is running on Clifton’s desktop and can send Telegram messages successfully.";
 
@@ -19,7 +16,6 @@ class DailyOptionsBot {
     this.storage = options.storage;
     this.config = options.config;
     this.logger = options.logger;
-    this.generatePickerBrief = options.generatePickerBrief || generatePickerBrief;
   }
 
   adminChatId() {
@@ -85,7 +81,8 @@ class DailyOptionsBot {
     }
 
     if (command === "/today") {
-      await this.sendPickerToChat(chatId);
+      const latest = this.storage.getLastBrief();
+      await this.telegram.sendMessage(chatId, latest || "No brief has been published yet today.");
       return;
     }
 
@@ -94,48 +91,20 @@ class DailyOptionsBot {
     }
   }
 
-  async sendPickerToChat(chatId) {
-    await this.telegram.sendMessage(chatId, PREPARING_MESSAGE);
-    const brief = await this.generatePickerBrief({ logger: this.logger });
-    await this.telegram.sendMessage(chatId, brief);
-  }
-
-  async sendDailyToSubscribers(now) {
-    const parts = partsInTimezone(now || new Date(), this.config.pickerTimezone);
-    const today = parts.dateString;
-    if (this.storage.getLastSentDate() === today) {
-      this.logger.info("Daily send skipped; already sent", { today });
-      return false;
+  async publishBrief(payload) {
+    const message = String(payload && payload.message || "").trim();
+    const publishId = String(payload && payload.publishId || "").trim();
+    if (!message) throw new Error("Publish payload requires message");
+    if (publishId && this.storage.getLastPublishId() === publishId) {
+      this.logger.info("Publish skipped; duplicate publish id", { publishId });
+      return { sent: 0, skipped: true };
     }
 
     const subscribers = this.storage.getSubscribers();
-    if (subscribers.length === 0) {
-      this.storage.setLastSentDate(today);
-      this.logger.info("No subscribers for daily send", { today });
-      return false;
-    }
-
-    if (!isRegularMarketOpenDate(today)) {
-      const text = "No regular US market open today.";
-      await this.sendToMany(subscribers, text);
-      this.storage.setLastSentDate(today);
-      return true;
-    }
-
-    await this.sendToMany(subscribers, PREPARING_MESSAGE);
-
-    let brief;
-    try {
-      brief = await this.generatePickerBrief({ logger: this.logger });
-    } catch (error) {
-      this.logger.error("Picker generation failed", { error: error.message });
-      await this.notifyAdmin(`Daily Options Picker failed: ${error.message}`);
-      return false;
-    }
-
-    await this.sendToMany(subscribers, brief);
-    this.storage.setLastSentDate(today);
-    return true;
+    await this.sendToMany(subscribers, message);
+    this.storage.setLastBrief(message, publishId);
+    this.logger.info("Published brief", { publishId, subscriberCount: subscribers.length });
+    return { sent: subscribers.length, skipped: false };
   }
 
   async sendToMany(chatIds, text) {

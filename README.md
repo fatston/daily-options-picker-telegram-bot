@@ -1,38 +1,35 @@
 # Daily Options Picker Telegram Bot
 
-A local Telegram bot that sends subscribed users one weekday pre-open options brief before the regular US stock market opens.
+Local Telegram publisher for Codex-generated pre-open options briefs.
 
-The bot runs from this desktop/server, stores subscribers in a local JSON file, and schedules the daily send for weekdays at `08:35` in the `America/New_York` IANA timezone. Daylight saving time is handled by the JavaScript `Intl` timezone APIs.
+The flow is:
+
+```text
+Codex automation -> local Node.js bot -> Telegram subscribers
+```
+
+Codex owns the research and writing. The Node bot only manages Telegram commands, subscriptions, and a local authenticated publish endpoint.
 
 ## Setup
 
 1. Install Node.js 14 or newer.
 2. Copy `.env.example` to `.env`.
-3. Set `TELEGRAM_BOT_TOKEN` in `.env`.
-4. Optionally set `ADMIN_CHAT_ID` in `.env`.
-5. Install dependencies:
-
-```bash
-npm install
-```
-
-This project currently uses only Node built-ins, so `npm install` creates the local lockfile and validates the project metadata.
+3. Set `TELEGRAM_BOT_TOKEN`.
+4. Set `PUBLISH_TOKEN` to a long local secret.
+5. Optionally set `ADMIN_CHAT_ID`.
+6. Run `npm install`.
 
 ## Configuration
-
-Environment variables:
 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `TELEGRAM_BOT_TOKEN` | required | Telegram bot token. Do not commit this. |
-| `ADMIN_CHAT_ID` | empty | Optional chat id allowed to run `/test` and receive errors. If omitted, the first `/start` or `/test` chat is stored locally as admin. |
-| `BOT_DATA_FILE` | `./data/bot-state.json` | Persistent subscriber/admin/last-send state. |
+| `ADMIN_CHAT_ID` | empty | Admin chat for `/test` and error messages. If omitted, first `/start` or `/test` is stored locally. |
+| `BOT_DATA_FILE` | `./data/bot-state.json` | Local subscriber/admin/latest-brief state. |
 | `BOT_LOG_FILE` | `./logs/bot.log` | JSON-lines log file. |
-| `PICKER_TIME` | `08:35` | Daily picker time in `HH:mm`. |
-| `PICKER_TIMEZONE` | `America/New_York` | IANA timezone for the schedule and duplicate-send date. |
-| `PICKER_WEEKDAYS` | `1,2,3,4,5` | Weekday numbers, where Sunday is `0` and Monday is `1`. |
-
-Schedule configuration lives in `.env` via `PICKER_TIME`, `PICKER_TIMEZONE`, and `PICKER_WEEKDAYS`. The default is Monday-Friday at `08:35 America/New_York`.
+| `PUBLISH_HOST` | `127.0.0.1` | Local publish server host. |
+| `PUBLISH_PORT` | `8787` | Local publish server port. |
+| `PUBLISH_TOKEN` | required | Bearer token used by Codex automation to publish. |
 
 ## Run
 
@@ -40,44 +37,50 @@ Schedule configuration lives in `.env` via `PICKER_TIME`, `PICKER_TIMEZONE`, and
 npm start
 ```
 
-Leave the terminal or background process running on the desktop. The bot uses Telegram long polling, so no public webhook server is required.
+The bot uses Telegram long polling. No public webhook is required.
 
 ## Commands
 
-- `/start` — welcome message and explanation
-- `/help` — list all commands
-- `/subscribe` — subscribe this chat to daily picks
-- `/unsubscribe` — unsubscribe this chat
-- `/today` — generate and send today's picker immediately
-- `/status` — show whether this chat is subscribed
-- `/test` — admin-only test message when `ADMIN_CHAT_ID` is configured
+- `/start` - welcome message
+- `/help` - list commands
+- `/subscribe` - receive daily picks
+- `/unsubscribe` - stop daily picks
+- `/today` - resend the latest published brief
+- `/status` - check subscription status
+- `/test` - send admin test message
 
-## Picker behaviour
+## Publish Endpoint
 
-Before `/today` or the scheduled daily run, the bot sends:
-
-```text
-🔎 Preparing today’s Daily Options Picker...
-
-Checking pre-open market news and looking for one clear directional setup.
-```
-
-It then searches current news through a modular RSS-based provider and prefers liquid large/mid-cap US-listed tickers with:
-
-- at least one primary financial/news source, such as Reuters, CNBC, Bloomberg, MarketWatch, Yahoo Finance, SEC, Nasdaq/NYSE, or company investor relations
-- supporting secondary attention when available, such as Benzinga, Seeking Alpha, The Motley Fool, Stocktwits, Reddit, or similar investing discussion sources
-
-If no supported directional setup is found, it sends:
+Codex automation posts the finished brief to:
 
 ```text
-No strong pre-open options signal found today.
+POST http://127.0.0.1:8787/publish
+Authorization: Bearer <PUBLISH_TOKEN>
+Content-Type: application/json
 ```
 
-The bot skips duplicate scheduled sends by storing the last sent `America/New_York` date. On weekends or recognized regular US market holidays, scheduled subscribers receive:
+Body:
 
-```text
-No regular US market open today.
+```json
+{
+  "publishId": "2026-05-25",
+  "message": "..."
+}
 ```
+
+`publishId` prevents duplicate sends. The bot stores the latest message so `/today` can resend it.
+
+## Codex Automation
+
+The automation prompt lives in `automation/daily-options-brief.md`.
+
+The automation researches current big and small financial/news sources, selects exactly three US-listed names, and sends one concise brief:
+
+- one small cap
+- one mid cap
+- one large cap
+
+Links belong only at the bottom under `References`.
 
 ## Build And Test
 
@@ -86,18 +89,14 @@ npm run build
 npm test
 ```
 
-`npm run build` syntax-checks the source files. `npm test` runs command, storage, scheduler, market-calendar, and picker unit tests.
+The tests cover command wording, subscriptions, latest-brief resend, duplicate publish protection, and the local publish endpoint auth.
 
 ## Data And Logs
 
-Local runtime data is intentionally uncommitted:
+Ignored local files:
 
+- `.env`
 - `data/bot-state.json`
 - `logs/bot.log`
-- `.env`
 
-The bot never places trades. It only sends informational text and includes the disclaimer:
-
-```text
-Informational only. Not personalized financial advice.
-```
+The bot never places trades. It only publishes informational text.
