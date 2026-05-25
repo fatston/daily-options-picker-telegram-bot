@@ -1,8 +1,17 @@
-const START_MESSAGE = "👋 Welcome to Daily Options Picker.\n\nThis bot was built by Clifton.\n\nCodex researches current market news each weekday before the regular US open, picks one small-cap, one mid-cap, and one large-cap directional setup, then this Node bot publishes the brief to Telegram.\n\nInformational only. Not financial advice or a trade recommendation.\n\nCommands:\n/subscribe — receive daily picks\n/unsubscribe — stop daily picks\n/today — resend the latest published brief\n/status — check subscription status\n/test — send admin test message\n/help — show commands";
+const START_MESSAGE = "\u{1F44B} Welcome to Daily Options Picker.\n\nThis bot was built by Clifton.\n\nCodex researches current market news each weekday before the regular US open, picks one small-cap, one mid-cap, and one large-cap directional setup, then this Node bot publishes the brief to Telegram.\n\nInformational only. Not financial advice or a trade recommendation.\n\nCommands:\n/subscribe - receive daily picks\n/unsubscribe - stop daily picks\n/today - resend the latest published brief\n/status - check subscription status\n/test - send admin test message\n/help - show commands";
 
-const HELP_MESSAGE = "Commands:\n/start — welcome message\n/help — list commands\n/subscribe — receive daily picks\n/unsubscribe — stop daily picks\n/today — resend the latest published brief\n/status — check subscription status\n/test — send admin test message";
+const HELP_MESSAGE = "Commands:\n/start - welcome message\n/help - list commands\n/subscribe - receive daily picks\n/unsubscribe - stop daily picks\n/today - resend the latest published brief\n/status - check subscription status\n/test - send admin test message";
 
-const TEST_MESSAGE = "✅ Daily Options Picker test message received.\n\nThe bot is running on Clifton’s desktop and can send Telegram messages successfully.";
+const TEST_MESSAGE = "\u2705 Daily Options Picker test message received.\n\nThe bot is running on Clifton's desktop and can send Telegram messages successfully.";
+
+function normalizeBriefEmoji(message) {
+  return String(message || "")
+    .replace(/\?\?\s+Small cap ticker/g, "\u{1F539} Small cap ticker")
+    .replace(/\?\?\s+Mid cap ticker/g, "\u{1F538} Mid cap ticker")
+    .replace(/\?\?\s+Large cap ticker/g, "\u{1F537} Large cap ticker")
+    .replace(/\?\?\s+Bull/g, "\u{1F402} Bull")
+    .replace(/\?\?\s+Bear/g, "\u{1F43B} Bear");
+}
 
 function commandFromMessage(message) {
   const text = (message && message.text || "").trim();
@@ -92,7 +101,7 @@ class DailyOptionsBot {
   }
 
   async publishBrief(payload) {
-    const message = String(payload && payload.message || "").trim();
+    const message = normalizeBriefEmoji(payload && payload.message).trim();
     const publishId = String(payload && payload.publishId || "").trim();
     if (!message) throw new Error("Publish payload requires message");
     if (publishId && this.storage.getLastPublishId() === publishId) {
@@ -141,5 +150,6 @@ module.exports = {
   START_MESSAGE,
   HELP_MESSAGE,
   TEST_MESSAGE,
-  commandFromMessage
+  commandFromMessage,
+  normalizeBriefEmoji
 };
