@@ -18,13 +18,6 @@ function loadDotEnv(filePath) {
   }
 }
 
-function parseWeekdays(value) {
-  return String(value || "1,2,3,4,5")
-    .split(",")
-    .map((day) => Number(day.trim()))
-    .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6);
-}
-
 function getConfig(rootDir) {
   const projectRoot = rootDir || path.resolve(__dirname, "..");
   loadDotEnv(path.join(projectRoot, ".env"));
@@ -35,16 +28,14 @@ function getConfig(rootDir) {
     adminChatId: process.env.ADMIN_CHAT_ID || "",
     dataFile: path.resolve(projectRoot, process.env.BOT_DATA_FILE || "./data/bot-state.json"),
     logFile: path.resolve(projectRoot, process.env.BOT_LOG_FILE || "./logs/bot.log"),
-    pickerTime: process.env.PICKER_TIME || "08:35",
-    pickerTimezone: process.env.PICKER_TIMEZONE || "America/New_York",
-    pickerWeekdays: parseWeekdays(process.env.PICKER_WEEKDAYS),
-    pollIntervalMs: Number(process.env.TELEGRAM_POLL_INTERVAL_MS || 1500),
-    scheduleCheckMs: Number(process.env.SCHEDULE_CHECK_MS || 30000)
+    publishHost: process.env.PUBLISH_HOST || "127.0.0.1",
+    publishPort: Number(process.env.PUBLISH_PORT || 8787),
+    publishToken: process.env.PUBLISH_TOKEN || "",
+    pollIntervalMs: Number(process.env.TELEGRAM_POLL_INTERVAL_MS || 1500)
   };
 }
 
 module.exports = {
   getConfig,
-  loadDotEnv,
-  parseWeekdays
+  loadDotEnv
 };

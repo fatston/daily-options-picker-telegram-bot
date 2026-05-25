@@ -3,7 +3,7 @@ const { createLogger } = require("./logger");
 const { JsonStorage } = require("./storage");
 const { TelegramClient } = require("./telegram");
 const { DailyOptionsBot } = require("./bot");
-const { startScheduler } = require("./scheduler");
+const { startPublisherServer } = require("./publisher");
 
 async function main() {
   const config = getConfig();
@@ -20,7 +20,7 @@ async function main() {
   const me = await telegram.getMe();
   logger.info("Telegram bot connected", { username: me.result && me.result.username });
 
-  startScheduler(bot, config, logger);
+  startPublisherServer(bot, config, logger);
 
   logger.info("Polling Telegram updates");
   while (true) {

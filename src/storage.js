@@ -4,9 +4,10 @@ const path = require("path");
 function defaultState() {
   return {
     subscribers: [],
-    lastSentDate: "",
     adminChatId: "",
-    lastUpdateId: 0
+    lastUpdateId: 0,
+    lastBrief: "",
+    lastPublishId: ""
   };
 }
 
@@ -57,15 +58,6 @@ class JsonStorage {
     this.save();
   }
 
-  getLastSentDate() {
-    return this.state.lastSentDate || "";
-  }
-
-  setLastSentDate(date) {
-    this.state.lastSentDate = date;
-    this.save();
-  }
-
   getAdminChatId() {
     return this.state.adminChatId || "";
   }
@@ -81,6 +73,20 @@ class JsonStorage {
 
   setLastUpdateId(updateId) {
     this.state.lastUpdateId = Number(updateId || 0);
+    this.save();
+  }
+
+  getLastBrief() {
+    return this.state.lastBrief || "";
+  }
+
+  getLastPublishId() {
+    return this.state.lastPublishId || "";
+  }
+
+  setLastBrief(message, publishId) {
+    this.state.lastBrief = String(message || "");
+    this.state.lastPublishId = String(publishId || "");
     this.save();
   }
 }
