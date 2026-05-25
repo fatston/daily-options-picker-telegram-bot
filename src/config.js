@@ -31,7 +31,13 @@ function getConfig(rootDir) {
     publishHost: process.env.PUBLISH_HOST || "127.0.0.1",
     publishPort: Number(process.env.PUBLISH_PORT || 8787),
     publishToken: process.env.PUBLISH_TOKEN || "",
-    pollIntervalMs: Number(process.env.TELEGRAM_POLL_INTERVAL_MS || 1500)
+    pollIntervalMs: Number(process.env.TELEGRAM_POLL_INTERVAL_MS || 1500),
+    reportReadyTime: process.env.REPORT_READY_TIME || "08:35",
+    reportTimezone: process.env.REPORT_TIMEZONE || "America/New_York",
+    reportWeekdays: (process.env.REPORT_WEEKDAYS || "1,2,3,4,5")
+      .split(",")
+      .map((day) => Number(day.trim()))
+      .filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
   };
 }
 

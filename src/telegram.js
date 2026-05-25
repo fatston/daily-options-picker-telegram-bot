@@ -43,12 +43,12 @@ class TelegramClient {
     }, body);
   }
 
-  sendMessage(chatId, text) {
-    return this.call("sendMessage", {
+  sendMessage(chatId, text, options) {
+    return this.call("sendMessage", Object.assign({
       chat_id: chatId,
       text,
       disable_web_page_preview: true
-    });
+    }, options || {}));
   }
 
   getUpdates(offset, timeout) {

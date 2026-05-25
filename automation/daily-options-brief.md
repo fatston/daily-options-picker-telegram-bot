@@ -61,4 +61,6 @@ Read `.env` from the repo root. POST the final message to the local Node bot:
 - Header: `Authorization: Bearer ${PUBLISH_TOKEN}`
 - JSON body: `{ "message": "...", "publishId": "YYYY-MM-DD" }`
 
+Use the America/New_York report date for `publishId`. This lets `/today` and `/yesterday` return the correct brief.
+
 If no three credible picks are available, publish a concise message saying no strong pre-open options setup was found today, with references checked where possible.
