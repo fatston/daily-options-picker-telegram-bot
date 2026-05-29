@@ -2,6 +2,6 @@ date,ticker,size,direction
 2026-05-27,VRRM,small,put
 2026-05-27,ANF,med,call
 2026-05-27,ZS,large,put
-2026-05-29,AEO,small,put
-2026-05-29,GAP,med,put
-2026-05-29,DELL,large,call
+2026-05-28,ONDS,small,call
+2026-05-28,PLAB,med,put
+2026-05-28,SNOW,large,call
