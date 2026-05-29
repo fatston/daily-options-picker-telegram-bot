@@ -1,6 +1,6 @@
 # Daily Options Picker Codex Automation
 
-Research current pre-open US stock-market news and publish one concise Telegram brief through the local Node bot.
+Research current pre-open US stock-market news and publish one concise Telegram brief through the hosted Daily Options Picker Telegram bot.
 
 ## Schedule
 
@@ -24,9 +24,11 @@ Each pick must have a clear bullish or bearish directional read. Prefer names wi
 
 ## Message Format
 
-Keep it short and mobile-friendly. Use bullets where useful. Put all links only at the bottom under References.
+Keep it short and mobile-friendly. Use bullets where useful. Put all links only at the bottom under References. Put the America/New_York information date before the first separator.
 
 ```text
+Information date: <YYYY-MM-DD America/New_York>
+
 =================
 
 🔹 Small cap ticker - <TICKER>
@@ -55,12 +57,25 @@ Informational only. Not personalized financial advice.
 
 ## Publish
 
-Read `.env` from the repo root. POST the final message to the local Node bot:
+Read `.env` from the repo root. POST the final message and structured picks to the hosted Telegram bot:
 
-- URL: `http://127.0.0.1:${PUBLISH_PORT:-8787}/publish`
+- URL: `${PUBLISH_URL}`
 - Header: `Authorization: Bearer ${PUBLISH_TOKEN}`
-- JSON body: `{ "message": "...", "publishId": "YYYY-MM-DD" }`
+- JSON body:
+
+```json
+{
+  "message": "...",
+  "publishId": "YYYY-MM-DD",
+  "picks": [
+    { "ticker": "SMALL", "size": "small", "direction": "call" },
+    { "ticker": "MID", "size": "med", "direction": "put" },
+    { "ticker": "LARGE", "size": "large", "direction": "call" }
+  ]
+}
+```
 
 Use the America/New_York report date for `publishId`. This lets `/today` and `/yesterday` return the correct brief.
+Use `size` values `small`, `med`, and `large`. Use `direction` values `call` for bullish and `put` for bearish.
 
 If no three credible picks are available, publish a concise message saying no strong pre-open options setup was found today, with references checked where possible.
