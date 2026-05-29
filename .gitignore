@@ -1,6 +1,8 @@
-.vercel
-.webhook-secret
 .env
-
-.env*
-node_modules
+.env.local
+.env.production.local
+.webhook-secret
+data/bot-state.json
+logs/
+node_modules/
+npm-debug.log*

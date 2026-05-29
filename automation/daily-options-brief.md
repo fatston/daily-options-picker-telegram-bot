@@ -1,6 +1,6 @@
 # Daily Options Picker Codex Automation
 
-Research current pre-open US stock-market news and publish one concise Telegram brief through the hosted Daily Options Picker Telegram bot.
+Research current pre-open US stock-market news and publish one concise Telegram brief through the local Node bot.
 
 ## Schedule
 
@@ -24,11 +24,9 @@ Each pick must have a clear bullish or bearish directional read. Prefer names wi
 
 ## Message Format
 
-Keep it short and mobile-friendly. Use bullets where useful. Put all links only at the bottom under References. Put the America/New_York information date before the first separator.
+Keep it short and mobile-friendly. Use bullets where useful. Put all links only at the bottom under References.
 
 ```text
-Information date: <YYYY-MM-DD America/New_York>
-
 =================
 
 🔹 Small cap ticker - <TICKER>
@@ -57,9 +55,9 @@ Informational only. Not personalized financial advice.
 
 ## Publish
 
-Read `.env` from the repo root. POST the final message and structured picks to the hosted Telegram bot:
+Read `.env` from the repo root. POST the final message and structured picks to the local Node bot:
 
-- URL: `${PUBLISH_URL}`
+- URL: `http://127.0.0.1:${PUBLISH_PORT:-8787}/publish`
 - Header: `Authorization: Bearer ${PUBLISH_TOKEN}`
 - JSON body:
 
