@@ -29,3 +29,24 @@ date,ticker,size,direction
 ```
 
 Seed or refresh the Blob CSV from `data/picks.csv` with `npm run seed:picks`.
+
+## Deployment
+
+This project is linked to Vercel as `daily-telegram-options`.
+
+Deploy production from the repo root:
+
+```bash
+npm test
+npm run build
+npx --package vercel vercel deploy --prod --yes
+```
+
+After deployment, verify:
+
+```bash
+curl https://daily-telegram-options.vercel.app/api/health
+curl -H "Authorization: Bearer <PUBLISH_TOKEN>" https://daily-telegram-options.vercel.app/api/picks.csv
+```
+
+The CSV endpoint should return `401` without the bearer token.
